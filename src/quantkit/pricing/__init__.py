@@ -4,6 +4,7 @@ Every pricer takes an :class:`OptionSpec`, so the same contract can be priced by
 several independent methods and the results compared.
 """
 
+from quantkit.pricing.asian import asian_monte_carlo_price, geometric_asian_price
 from quantkit.pricing.binomial import ExerciseStyle, binomial_price
 from quantkit.pricing.black_scholes import Greeks, bsm_greeks, bsm_price
 from quantkit.pricing.implied_vol import implied_vol, no_arbitrage_bounds
@@ -16,9 +17,11 @@ __all__ = [
     "MonteCarloResult",
     "OptionKind",
     "OptionSpec",
+    "asian_monte_carlo_price",
     "binomial_price",
     "bsm_greeks",
     "bsm_price",
+    "geometric_asian_price",
     "implied_vol",
     "monte_carlo_price",
     "no_arbitrage_bounds",

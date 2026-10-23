@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Install dependencies from the lockfile
+        run: uv sync --locked --all-extras
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type-check
+        run: uv run mypy
+
+      - name: Run tests and README doctests with coverage
+        run: >-
+          uv run pytest --doctest-glob="README.md"
+          --cov=quantkit --cov-report=term-missing --cov-fail-under=90
+
+      - name: Smoke-test the command-line interface
+        run: |
+          uv run quantkit --version
+          uv run quantkit price --spot 42 --strike 40 --rate 0.10 --vol 0.20 --maturity 0.5
+          uv run quantkit iv --price 4.76 --spot 42 --strike 40 --rate 0.10 --maturity 0.5
+          uv run quantkit simulate --output "$RUNNER_TEMP/prices.csv"
+          uv run quantkit backtest "$RUNNER_TEMP/prices.csv" --strategy momentum
+          uv run quantkit frontier "$RUNNER_TEMP/prices.csv" --plot "$RUNNER_TEMP/frontier.png"
+
+      - name: Run the example scripts
+        run: |
+          uv run python examples/binomial_convergence.py
+          uv run python examples/efficient_frontier.py
+          uv run python examples/backtest_trend.py

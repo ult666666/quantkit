@@ -7,15 +7,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from quantkit._validation import FloatArray, require_int
+from quantkit._validation import FloatArray, SeedLike, require_int
 from quantkit.exceptions import InvalidParameterError
 from quantkit.pricing.option import OptionSpec
 
 Z_95 = 1.959963984540054
 """Two-sided 95% quantile of the standard normal distribution, N^-1(0.975)."""
-
-SeedLike = int | np.random.Generator | None
-"""Anything accepted by :func:`numpy.random.default_rng`."""
 
 
 @dataclass(frozen=True, slots=True)

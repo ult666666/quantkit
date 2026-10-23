@@ -17,6 +17,9 @@ from quantkit.exceptions import DataValidationError, InvalidParameterError
 
 FloatArray = npt.NDArray[np.float64]
 
+SeedLike = int | np.random.Generator | None
+"""Anything accepted by :func:`numpy.random.default_rng`: a seed, a generator or None."""
+
 
 def require_finite(name: str, value: float) -> float:
     """Return ``value`` as a float, or raise if it is NaN or infinite."""

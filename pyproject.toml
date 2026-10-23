@@ -41,6 +41,9 @@ dependencies = [
 [project.optional-dependencies]
 plot = ["matplotlib>=3.11.2"]
 
+[project.scripts]
+quantkit = "quantkit.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/ult666666/quantkit"
 Repository = "https://github.com/ult666666/quantkit"
@@ -96,7 +99,7 @@ convention = "google"
 [tool.mypy]
 strict = true
 python_version = "3.11"
-files = ["src", "tests"]
+files = ["src", "tests", "examples"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]

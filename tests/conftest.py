@@ -8,8 +8,10 @@ import pytest
 from hypothesis import settings
 
 # Pricing calls are fast, but the first call into SciPy can be slow enough to trip
-# Hypothesis' per-example deadline on a cold CI runner.
+# Hypothesis' per-example deadline on a cold CI runner. For a longer search, run
+# `pytest --hypothesis-profile=thorough`.
 settings.register_profile("quantkit", deadline=None, max_examples=200)
+settings.register_profile("thorough", deadline=None, max_examples=5_000)
 settings.load_profile("quantkit")
 
 

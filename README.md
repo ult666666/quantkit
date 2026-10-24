@@ -274,7 +274,7 @@ uv run python examples/backtest_trend.py  # regenerate a figure in docs/images
 
 **Backtesting.** Daily close-to-close only: trades fill at the same close that produced the signal, and the only friction is a proportional cost (no slippage, market impact, borrowing or financing costs). Idle cash earns nothing. Prices must be complete (no missing values and no assets entering mid-sample) and should already be adjusted for splits and dividends. The no-look-ahead guarantee covers the engine and the built-in strategies; custom strategies can be checked with `check_no_lookahead`.
 
-**Data and verification.** There is deliberately no data downloader: bring your own CSV with ISO dates. The CI matrix includes Python 3.11, but Python 3.11 itself was not run locally: development and testing used Python 3.12 and 3.13, plus the NumPy 2.4 and SciPy 1.17 versions that the 3.11 job installs (tested on 3.12).
+**Data and verification.** There is deliberately no data downloader: bring your own CSV with ISO dates. CI runs lint, strict type checks and the full suite with README doctests on Python 3.11, 3.12 and 3.13. The 3.11 job installs NumPy 2.4 and older pandas type stubs; it caught three type annotations those stubs read differently, which were fixed in the source.
 
 **Roadmap ideas:** per-asset and linear constraints, a vectorized BSM interface, Longstaff–Schwartz for American options, Black–Litterman expected returns, and walk-forward evaluation with execution lag in the backtester.
 

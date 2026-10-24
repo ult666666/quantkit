@@ -35,7 +35,13 @@ Quantitative finance code fails quietly: a sign slip in a Greek, an off-by-one d
 
 ## Quick start
 
-quantkit is not published on PyPI; install it from source. With [uv](https://docs.astral.sh/uv/):
+quantkit is not on PyPI. Install the library and the `quantkit` CLI from the GitHub release (Python 3.11+):
+
+```bash
+pip install https://github.com/ult666666/quantkit/releases/download/v0.1.0/quantkit-0.1.0-py3-none-any.whl
+```
+
+Each release also attaches the source distribution and SHA-256 checksums. To work on the code, install it from source with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/ult666666/quantkit.git

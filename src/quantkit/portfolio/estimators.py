@@ -90,13 +90,13 @@ def ledoit_wolf_shrinkage(returns: pd.DataFrame) -> float:
     n, p = x.shape
     sample = x.T @ x / n
     mu = np.trace(sample) / p
-    d2 = float(np.sum((sample - mu * np.eye(p)) ** 2)) / p
+    d2: float = float(np.sum((sample - mu * np.eye(p)) ** 2)) / p
     if d2 == 0.0:  # S is already a multiple of the identity: nothing to shrink.
         return 0.0
     # sum_k ||x_k x_k' - S||_F^2 simplifies to sum_k ||x_k||^4 - n ||S||_F^2,
     # which avoids building n separate p x p matrices.
     row_norms_sq = np.sum(x**2, axis=1)
-    b2_bar = float(np.sum(row_norms_sq**2) - n * np.sum(sample**2)) / (n**2 * p)
+    b2_bar: float = float(np.sum(row_norms_sq**2) - n * np.sum(sample**2)) / (n**2 * p)
     return min(b2_bar, d2) / d2
 
 

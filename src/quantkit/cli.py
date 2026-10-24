@@ -260,9 +260,11 @@ def _save_frontier_plot(table: pd.DataFrame, mu: pd.Series, cov: pd.DataFrame, p
         ("min variance", "s", "tab:green"),
         ("max Sharpe", "*", "tab:red"),
     ):
+        # A float array keeps the point's type exact under every pandas-stubs version.
+        vol, ret = table.loc[name, ["volatility", "expected_return"]].to_numpy(dtype=np.float64)
         ax.scatter(
-            table.loc[name, "volatility"],
-            table.loc[name, "expected_return"],
+            vol,
+            ret,
             marker=marker,
             color=color,
             s=120,

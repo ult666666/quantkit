@@ -114,4 +114,5 @@ def _check_budgets(budgets: pd.Series | None, labels: pd.Index) -> FloatArray:
         raise InvalidParameterError("risk budgets must be positive and finite")
     if not math.isclose(b.sum(), 1.0, rel_tol=0.0, abs_tol=1e-9):
         raise InvalidParameterError(f"risk budgets must sum to one, got {b.sum():.6g}")
-    return b / b.sum()  # remove round-off so contributions can match to ``tol``
+    normalized: FloatArray = b / b.sum()  # remove round-off so contributions can match to ``tol``
+    return normalized

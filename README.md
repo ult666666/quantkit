@@ -217,6 +217,22 @@ Seed 42 happens to be one of the 14. With no trends in the data, the crossover m
 
 ![Equity curves and drawdowns on synthetic data](docs/images/backtest_equity.png)
 
+**Walk-forward portfolio construction**
+([`walk_forward_risk_parity.py`](examples/walk_forward_risk_parity.py)). Connect
+trailing-return estimation, risk-parity allocation and backtesting on fictional
+prices. Each monthly allocation uses only closes preceding the rebalance date.
+A monthly equal-weight benchmark shares the same cash warmup, dates and costs.
+
+```bash
+uv run python examples/walk_forward_risk_parity.py
+```
+
+The command exports prices, both target tables, estimation windows, net wealth
+and a common-period summary to `walk-forward-output/`. The
+[walkthrough](docs/WALK_FORWARD.md) explains the timing, CSV fields, reproducible
+inputs and limitations. These exports demonstrate mechanics, not investment
+performance.
+
 ## How it works
 
 ```mermaid

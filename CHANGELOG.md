@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+The `quantkit` package itself is unchanged since 0.1.0.
+
+### Added
+
+- `examples/walk_forward_risk_parity.py`: a walk-forward example that rebuilds a
+  risk-parity portfolio each month from trailing returns, compares it with an
+  equal-weight benchmark and exports the results as CSVs. The walkthrough is in
+  `docs/WALK_FORWARD.md`.
+- A release workflow that builds the wheel and sdist from a version tag and
+  attaches them, with SHA-256 checksums, to the GitHub release.
+
 ## 0.1.0 - 2026-10-23
 
 First release.

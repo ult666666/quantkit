@@ -27,3 +27,10 @@ htmlcov/
 
 # Regenerated walk-forward example CSVs
 /walk-forward-output/
+
+# Files the README's CLI examples write when run from the repository root
+/prices.csv
+/frontier.png
+
+# Local AI-agent planning notes
+docs/superpowers/

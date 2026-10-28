@@ -1,6 +1,6 @@
 # quantkit
 
-Options pricing, portfolio optimization and backtesting in Python — every model checked against closed-form results, textbook values or an independent method.
+Options pricing, portfolio optimization and backtesting in Python. Every model is checked against closed-form results, textbook values or an independent method.
 
 [![CI](https://github.com/ult666666/quantkit/actions/workflows/ci.yml/badge.svg)](https://github.com/ult666666/quantkit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -197,7 +197,7 @@ Add `--plot frontier.png` to also save a chart (needs the `plot` extra), and, fo
 
 ### Examples and figures
 
-The scripts in [`examples/`](examples) regenerate every figure below (`uv run python examples/<name>.py`).
+The scripts in [`examples/`](examples) regenerate the figures below (`uv run python examples/<name>.py`). The walk-forward example writes CSVs instead of a figure.
 
 **Binomial convergence** ([`binomial_convergence.py`](examples/binomial_convergence.py)). CRR tree prices for Hull's call approach the Black–Scholes–Merton value with an error that shrinks like 1/steps, oscillating as tree nodes move relative to the strike.
 
@@ -217,21 +217,13 @@ Seed 42 happens to be one of the 14. With no trends in the data, the crossover m
 
 ![Equity curves and drawdowns on synthetic data](docs/images/backtest_equity.png)
 
-**Walk-forward portfolio construction**
-([`walk_forward_risk_parity.py`](examples/walk_forward_risk_parity.py)). Connect
-trailing-return estimation, risk-parity allocation and backtesting on fictional
-prices. Each monthly allocation uses only closes preceding the rebalance date.
-A monthly equal-weight benchmark shares the same cash warmup, dates and costs.
+**Walk-forward portfolio construction** ([`walk_forward_risk_parity.py`](examples/walk_forward_risk_parity.py)), on **synthetic** data. This example connects trailing-return estimation, risk-parity allocation and backtesting. Each monthly allocation uses only closes before the rebalance date. A monthly equal-weight benchmark shares the same cash warmup, dates and costs.
 
 ```bash
 uv run python examples/walk_forward_risk_parity.py
 ```
 
-The command exports prices, both target tables, estimation windows, net wealth
-and a common-period summary to `walk-forward-output/`. The
-[walkthrough](docs/WALK_FORWARD.md) explains the timing, CSV fields, reproducible
-inputs and limitations. These exports demonstrate mechanics, not investment
-performance.
+The command exports prices, both target tables, estimation windows, net wealth and a common-period summary to `walk-forward-output/`. The [walkthrough](docs/WALK_FORWARD.md) explains the timing, CSV fields, reproducible inputs and limitations.
 
 ## How it works
 
@@ -296,9 +288,9 @@ uv run python examples/backtest_trend.py  # regenerate a figure in docs/images
 
 **Backtesting.** Daily close-to-close only: trades fill at the same close that produced the signal, and the only friction is a proportional cost (no slippage, market impact, borrowing or financing costs). Idle cash earns nothing. Prices must be complete (no missing values and no assets entering mid-sample) and should already be adjusted for splits and dividends. The no-look-ahead guarantee covers the engine and the built-in strategies; custom strategies can be checked with `check_no_lookahead`.
 
-**Data and verification.** There is deliberately no data downloader: bring your own CSV with ISO dates. CI runs lint, strict type checks and the full suite with README doctests on Python 3.11, 3.12 and 3.13. The 3.11 job installs NumPy 2.4 and older pandas type stubs; it caught three type annotations those stubs read differently, which were fixed in the source.
+**Data and verification.** There is deliberately no data downloader: bring your own CSV with ISO dates. CI runs lint, strict type checks and the full suite with README doctests on Python 3.11, 3.12 and 3.13.
 
-**Roadmap ideas:** per-asset and linear constraints, a vectorized BSM interface, Longstaff–Schwartz for American options, Black–Litterman expected returns, and walk-forward evaluation with execution lag in the backtester.
+**Roadmap ideas:** per-asset and linear constraints, a vectorized BSM interface, Longstaff–Schwartz for American options, Black–Litterman expected returns, and an engine option to fill trades after the signal close. The walk-forward example lags its estimation window by one close, but its trades still fill at the signal close.
 
 ## References
 

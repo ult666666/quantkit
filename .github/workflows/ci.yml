@@ -54,9 +54,13 @@ jobs:
           uv run quantkit simulate --output "$RUNNER_TEMP/prices.csv"
           uv run quantkit backtest "$RUNNER_TEMP/prices.csv" --strategy momentum
           uv run quantkit frontier "$RUNNER_TEMP/prices.csv" --plot "$RUNNER_TEMP/frontier.png"
+          uv run quantkit var-backtest "$RUNNER_TEMP/prices.csv" --method ewma --level 0.99
+          uv run quantkit var-backtest "$RUNNER_TEMP/prices.csv" --es-simulations 999
 
       - name: Run the example scripts
         run: |
           uv run python examples/binomial_convergence.py
           uv run python examples/efficient_frontier.py
           uv run python examples/backtest_trend.py
+          uv run python examples/var_backtest.py
+          uv run python examples/var_size_power.py

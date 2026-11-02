@@ -1,7 +1,7 @@
 [project]
 name = "quantkit"
 version = "0.1.0"
-description = "Options pricing, portfolio optimization and backtesting in Python, with every model checked against closed-form results, textbook values or an independent method."
+description = "Options pricing, portfolio optimization, backtesting and VaR model validation in Python, with every model checked against closed-form results, textbook values or an independent method."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -14,6 +14,7 @@ keywords = [
     "portfolio-optimization",
     "risk-parity",
     "backtesting",
+    "value-at-risk",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

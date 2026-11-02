@@ -15,14 +15,16 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from quantkit._validation import FloatArray, as_1d_array, require_level, validate_covariance
+from quantkit._validation import (
+    FloatArray,
+    as_1d_array,
+    require_level,
+    tail_count,
+    validate_covariance,
+)
 from quantkit.exceptions import InvalidParameterError
 
 _STANDARD_NORMAL = NormalDist()
-
-# (1 - 0.99) * 500 evaluates to 5.000000000000004 in binary floating point; this
-# slack stops math.ceil from turning that into 6.
-_FLOAT_SLACK = 1e-9
 
 
 def portfolio_volatility(weights: pd.Series, cov: pd.DataFrame) -> float:
@@ -37,9 +39,7 @@ def portfolio_volatility(weights: pd.Series, cov: pd.DataFrame) -> float:
 def _tail(returns: npt.ArrayLike, level: float) -> FloatArray:
     """The ``ceil(n * (1 - level))`` worst returns, worst first."""
     r = np.sort(as_1d_array("returns", returns, min_length=2))
-    level = require_level("level", level)
-    n_tail = max(1, math.ceil(len(r) * (1.0 - level) - _FLOAT_SLACK))
-    return r[:n_tail]
+    return r[: tail_count(len(r), require_level("level", level))]
 
 
 def historical_var(returns: npt.ArrayLike, *, level: float = 0.95) -> float:

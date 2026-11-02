@@ -40,6 +40,18 @@ All notable changes to this project are documented here. The format follows
   helper, so single-sample and rolling historical VaR always use the same rule.
   Results are unchanged.
 
+### Fixed
+
+- The README quick start installed the v0.1.0 release wheel, which predates
+  `quantkit.var`: the VaR doctests failed with `ModuleNotFoundError` and
+  `var-backtest` was not a command. The quick start now installs from GitHub
+  and says what the release lacks.
+- `quantkit var-backtest` printed its table and then exited with an error when
+  the sample was too long for `null_rejection_rates` to enumerate, for example
+  20 years of daily returns at 95%. It now only leaves out the exact size of
+  the tests.
+- `quantkit --help` mentions VaR model validation.
+
 ## 0.1.0 - 2026-10-23
 
 First release.

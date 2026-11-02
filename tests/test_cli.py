@@ -118,6 +118,25 @@ def test_var_backtest_one_method_one_ticker(
     assert "n/a (99% only)" in out
 
 
+def test_var_backtest_handles_samples_too_long_for_the_exact_size(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Twenty years of daily data at 95%: too many expected exceptions for
+    # null_rejection_rates to enumerate. The backtest must still succeed and only
+    # leave out the exact size of the tests.
+    path = tmp_path / "long.csv"
+    assert main(["simulate", "--output", str(path), "--days", "5040", "--seed", "3"]) == 0
+    capsys.readouterr()
+    args = ["var-backtest", str(path), "--method", "historical", "--level", "0.95"]
+    assert main([*args, "--es-simulations", "99"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "backtest: 4789 days" in captured.out
+    assert "Kupiec LR_uc p-value" in captured.out
+    assert "the exact size of the tests is not computed" in captured.out
+    assert "a correct model fails the 5% tests" not in captured.out
+
+
 def test_var_backtest_reports_bad_inputs(
     prices_csv: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

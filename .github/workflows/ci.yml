@@ -46,6 +46,17 @@ jobs:
           uv run pytest --doctest-glob="README.md"
           --cov=quantkit --cov-report=term-missing --cov-fail-under=90
 
+      - name: Run the README doctests against the installed wheel
+        # The README tells users to pip install the package, so check what a wheel
+        # delivers, not only the source tree (the v0.1.0 wheel lacks quantkit.var).
+        run: |
+          uv build --wheel --out-dir "$RUNNER_TEMP/dist"
+          uv venv "$RUNNER_TEMP/wheel-env"
+          uv pip install --python "$RUNNER_TEMP/wheel-env/bin/python" "$RUNNER_TEMP"/dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel-env/bin/python" -m doctest "$GITHUB_WORKSPACE/README.md"
+          "$RUNNER_TEMP/wheel-env/bin/quantkit" var-backtest --help > /dev/null
+
       - name: Smoke-test the command-line interface
         run: |
           uv run quantkit --version

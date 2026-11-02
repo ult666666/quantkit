@@ -24,6 +24,7 @@ from quantkit.backtest import (
     run_backtest,
 )
 from quantkit.data import load_prices_csv, simulate_gbm_prices
+from quantkit.exceptions import InvalidParameterError
 from quantkit.portfolio import (
     annualized_mean_returns,
     compute_returns,
@@ -342,11 +343,20 @@ def _cmd_var_backtest(args: argparse.Namespace) -> None:
         }
     )
     print(table.to_string())
-    sizes = null_rejection_rates(n_days, level=args.level)
+    try:
+        sizes = null_rejection_rates(n_days, level=args.level)
+    except InvalidParameterError:
+        # The inputs were validated above, so this is the enumeration-size limit: a
+        # long sample with many expected exceptions. The backtest itself stands.
+        size_note = f"Over {n_days} days at {level}, the exact size of the tests is not computed."
+    else:
+        size_note = (
+            f"Over {n_days} days at {level}, a correct model fails the 5% tests\n"
+            f"with probability {sizes.unconditional:.1%} (LR_uc), "
+            f"{sizes.independence:.1%} (LR_ind) and {sizes.conditional:.1%} (LR_cc)."
+        )
     print(
-        f"\nLR p-values use chi-squared limits. Over {n_days} days at {level}, a correct model "
-        f"fails the 5% tests\nwith probability {sizes.unconditional:.1%} (LR_uc), "
-        f"{sizes.independence:.1%} (LR_ind) and {sizes.conditional:.1%} (LR_cc).\n"
+        f"\nLR p-values use chi-squared limits. {size_note}\n"
         f"Z2 p-values compare with {args.es_simulations:,} paths simulated from each method's "
         f"own forecasts (seed {args.seed})."
     )
@@ -397,8 +407,8 @@ def _add_option_arguments(parser: argparse.ArgumentParser) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="quantkit",
-        description="Options pricing, portfolio optimization and backtesting. "
-        "Educational and research software, not investment advice.",
+        description="Options pricing, portfolio optimization, backtesting and VaR model "
+        "validation. Educational and research software, not investment advice.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)

@@ -84,6 +84,49 @@ def test_frontier_prints_a_table_and_saves_a_plot(
     assert plot.stat().st_size > 10_000
 
 
+def test_var_backtest_compares_every_method_on_common_days(
+    prices_csv: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = ["var-backtest", str(prices_csv), "--window", "100", "--es-simulations", "199"]
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "equal-weight portfolio of 5 assets, rebalanced daily: 399 daily returns" in out
+    # FHS needs 2 x 100 returns of history, which leaves 199 days for every method.
+    assert "backtest: 199 days" in out
+    assert "the period every method covers" in out
+    header = next(line for line in out.splitlines() if "historical" in line)
+    assert header.split() == ["historical", "Gaussian", "EWMA", "FHS"]
+    for row in ("Kupiec LR_uc p-value", "conditional coverage LR_cc p-value", "Z2 simulated"):
+        assert row in out
+    assert "n/a (< 250 days)" in out
+    assert "a correct model fails the 5% tests" in out
+
+
+def test_var_backtest_one_method_one_ticker(
+    prices_csv: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = ["var-backtest", str(prices_csv), "--method", "ewma", "--window", "100"]
+    assert main([*base, "--ticker", "CCC", "--es-simulations", "99"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("CCC: 399 daily returns")
+    assert "backtest: 299 days, " in out
+    zone = next(line for line in out.splitlines() if line.startswith("Basel zone"))
+    assert zone.split()[-2] in {"green", "yellow", "red"}
+    assert main([*base, "--level", "0.975", "--es-simulations", "99"]) == 0
+    out = capsys.readouterr().out
+    assert "97.5% one-day VaR and ES, 100-day window, EWMA decay 0.94" in out
+    assert "n/a (99% only)" in out
+
+
+def test_var_backtest_reports_bad_inputs(
+    prices_csv: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["var-backtest", str(prices_csv), "--ticker", "ZZZ"]) == 1
+    assert "ticker 'ZZZ' is not in" in capsys.readouterr().err
+    assert main(["var-backtest", str(prices_csv), "--method", "fhs"]) == 1
+    assert "needs more than 500 returns" in capsys.readouterr().err
+
+
 def test_python_dash_m_entry_point(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

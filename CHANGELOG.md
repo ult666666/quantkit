@@ -6,9 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
-The `quantkit` package itself is unchanged since 0.1.0.
-
 ### Added
+
+- `quantkit.var`, VaR model validation:
+  - `rolling_var_es`: rolling one-day VaR and expected shortfall forecasts by
+    historical simulation, a Gaussian model, EWMA (RiskMetrics, decay 0.94) and
+    filtered historical simulation. Each forecast uses only the window before
+    the day it forecasts; `RiskForecast.simulate` draws from the forecast
+    distributions.
+  - `backtest_var`, `kupiec_test`, `christoffersen_test` and
+    `conditional_coverage_test`: exception counts and likelihood-ratio tests
+    with asymptotic p-values, finite with no exceptions, only exceptions or no
+    consecutive pairs. `null_rejection_rates` computes the exact probability
+    that each test rejects a correct model at a given sample length.
+  - `basel_traffic_light`: the Basel Committee's 1996 zones and capital plus
+    factors for 250 days of 99% VaR.
+  - `acerbi_szekely_z2` and `es_backtest`: Acerbi and Székely's Z2 test of
+    expected shortfall with a simulated null distribution.
+- `quantkit var-backtest` command, and the `examples/var_backtest.py` (figure)
+  and `examples/var_size_power.py` (size and power study) scripts, which CI
+  now runs.
 
 - `examples/walk_forward_risk_parity.py`: a walk-forward example that rebuilds a
   risk-parity portfolio each month from trailing returns, compares it with an
@@ -16,6 +33,12 @@ The `quantkit` package itself is unchanged since 0.1.0.
   `docs/WALK_FORWARD.md`.
 - A release workflow that builds the wheel and sdist from a version tag and
   attaches them, with SHA-256 checksums, to the GitHub release.
+
+### Changed
+
+- The tail size `ceil(n * (1 - level))` of historical VaR moved to a shared
+  helper, so single-sample and rolling historical VaR always use the same rule.
+  Results are unchanged.
 
 ## 0.1.0 - 2026-10-23
 

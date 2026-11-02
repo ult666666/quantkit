@@ -6,7 +6,7 @@ This document explains how quantkit is put together, why it is built that way, a
 
 **Goals**
 
-- Implement the standard models of an introductory quantitative finance course (option pricing, mean–variance and risk-parity portfolios, backtesting) in code that a reader can follow line by line.
+- Implement the standard models of an introductory quantitative finance course (option pricing, mean–variance and risk-parity portfolios, backtesting) and the standard way risk teams validate a VaR model, in code that a reader can follow line by line.
 - Verify every model against something it did not produce itself: a textbook value, a closed form, an independent implementation, or an identity.
 - Fail loudly: validate inputs at the public boundary and raise typed errors with messages that name the problem.
 
@@ -27,11 +27,12 @@ src/quantkit/
 │                        monte_carlo.py · asian.py
 ├── portfolio/           estimators.py · mean_variance.py · risk_parity.py · risk.py
 ├── backtest/            engine.py · strategies.py · metrics.py
+├── var/                 forecasts.py · backtests.py · traffic_light.py · es_backtest.py
 ├── data.py              synthetic GBM prices, CSV loader
 └── cli.py, __main__.py  argparse front end (`quantkit ...`, `python -m quantkit`)
 ```
 
-Dependencies point one way: `pricing`, `portfolio` and `backtest` depend only on `_validation` and `exceptions` (and `backtest.engine` on `backtest.metrics`); `data` depends on `_validation`; only `cli` depends on everything, and only `__main__` imports `cli`. This keeps each subpackage testable on its own.
+Dependencies point one way: `pricing`, `portfolio`, `backtest` and `var` depend only on `_validation` and `exceptions` (and `backtest.engine` on `backtest.metrics`; inside `var`, `forecasts` uses `backtests` and `es_backtest` uses `forecasts`); `data` depends on `_validation`; only `cli` depends on everything, and only `__main__` imports `cli`. This keeps each subpackage testable on its own. The tail size shared by historical VaR and rolling historical simulation, `ceil(n (1 - level))`, lives in `_validation.tail_count` so that the two cannot drift apart.
 
 **Conventions used everywhere**
 
@@ -182,30 +183,87 @@ for the last trade day `s ≤ t`, computed for all days with a forward fill. The
 
 Sample standard deviations use `ddof=1`. The annual risk-free rate is converted to a per-period rate that compounds to it. Drawdowns are measured from a running peak that starts at the initial capital, so a loss on the first day counts. Maximum drawdown duration is the longest run of periods below a previous peak, until recovery or the end of the data. Hit rate ignores zero-return periods (for example, days spent in cash). Ratios with a zero denominator, or one that is zero up to round-off, return NaN rather than infinity.
 
-## 6. How correctness is verified
+## 6. VaR model validation (`quantkit.var`)
+
+A VaR model is only as good as its backtest. Banks forecast tomorrow's 99% one-day VaR every evening, count the days on which the loss exceeded it (*exceptions*), and test whether those exceptions behave like a correct model's: about 1% of days, independent of each other. Supervisors map the count of the last 250 days to a capital penalty. The subpackage implements that loop end to end.
+
+### Rolling forecasts (`forecasts.py`)
+
+**Timing contract.** The forecast for day `t` is made at the close of day `t - 1` from the returns `r[t-h], ..., r[t-1]`, where `h` is the method's history. It never sees `r[t]`, the return it is scored against, and nothing older than `h` days. Forecasts are indexed by the day they forecast, next to the realized return of that day, so exceptions are an elementwise comparison with no shifting left to the caller.
+
+**One representation for every method.** Each method describes tomorrow's return as `r[t] = mu[t] + sigma[t] e[t]`:
+
+| method | `mu[t]` | `sigma[t]` | innovation `e[t]` | history `h` |
+| --- | --- | --- | --- | --- |
+| historical | 0 | 1 | resampled from the window's returns | window |
+| gaussian | window mean | window std (`ddof=1`) | N(0, 1) | window |
+| ewma | 0 | EWMA volatility | N(0, 1) | window |
+| fhs | 0 | EWMA volatility | resampled standardized returns `r[s] / sigma[s]` | 2 × window |
+
+VaR and ES follow from the representation: `z sigma - mu` and `sigma phi(z) / (1 - c) - mu` for normal innovations, and `-(mu + sigma e_(m))` and `-(mu + sigma mean(e_(1..m)))` for an empirical pool, with `m = ceil(window (1 - c))`. For historical simulation that is exactly `historical_var` and `historical_cvar` of the window, and for the Gaussian method exactly `parametric_var` and `parametric_cvar`; the tests check every window against those functions. The same representation defines `RiskForecast.simulate`, which draws returns from each day's forecast distribution for the ES backtest. Keeping VaR, ES and simulation on one description means they cannot disagree about what the model says.
+
+**Vectorization.** `numpy.lib.stride_tricks.sliding_window_view` gives every window as a read-only view without copying. Historical VaR is `np.partition` along each row (the m-th smallest element and the m - 1 below it, in linear time per row); the Gaussian method uses row means and standard deviations; EWMA is one matrix-vector product of the squared windows with the weight vector. Each row depends only on its own window, so changing a later return cannot change an earlier forecast even by round-off, and the no-look-ahead test can demand bit-identical forecasts.
+
+**EWMA (RiskMetrics).** RiskMetrics forecasts variance as `sigma²[t] = λ sigma²[t-1] + (1 - λ) r²[t-1]` with `λ = 0.94` for daily data, which weights the return `k` days back by `(1 - λ) λ^k` and assumes a zero mean. quantkit applies the same weights inside the window and normalizes them to sum to one. *Trade-off:* the infinite recursion depends on how it was started and on every return since; the windowed form gives every method the same finite information set and memory, and with a 250-day window the omitted weight `0.94^250` is about 2e-7, so the two agree to that precision (the tests run the recursion over each window as an independent check).
+
+**Filtered historical simulation.** Hull & White (1998) rescale each historical return by the ratio of today's volatility to the volatility on its own day, `r[s] sigma[t] / sigma[s]`; Barone-Adesi, Giannopoulos & Vosper (1999) call the resampling of such standardized returns filtered historical simulation. It keeps the empirical shape of the tails (unlike EWMA) and reacts to volatility (unlike plain historical simulation). Each `sigma[s]` is itself an EWMA forecast that needs a window, so FHS needs two windows of history. *Alternative not taken:* a GARCH filter fitted by maximum likelihood, which would add an optimizer and its convergence failures to every forecast.
+
+**Exceptions** use a strict inequality, `r[t] < -VaR[t]`: a loss exactly equal to VaR is not an exception.
+
+### Exception tests (`backtests.py`)
+
+Under a correct model the exception indicators are i.i.d. Bernoulli(`p = 1 - c`). With `x` exceptions in `T` days and `n_ij` the number of days in state `i` followed by state `j`:
+
+- **Kupiec (1995), unconditional coverage:** `LR_uc = -2 ln[(1-p)^(T-x) p^x / ((1-π̂)^(T-x) π̂^x)]`, `π̂ = x/T`, asymptotically `χ²(1)`. The test is two-sided: too few exceptions mean the VaR is too high, which wastes capital.
+- **Christoffersen (1998), independence:** a first-order Markov chain with `π01 = n01 / (n00 + n01)` and `π11 = n11 / (n10 + n11)` against one pooled `π`; `LR_ind ~ χ²(1)`.
+- **Christoffersen (1998), conditional coverage:** the Markov chain against i.i.d. Bernoulli(`p`); `LR_cc ~ χ²(2)`. Both Christoffersen tests use the `T - 1` transitions, so `LR_cc` equals `LR_ind` plus Kupiec's statistic on days 2..T, an identity the tests check on random sequences. `kupiec_test` itself uses all `T` days, as Kupiec defines it.
+
+**Edge cases.** Every likelihood term is written as `count × ln(probability)` with `0 × ln 0 = 0`, and an empty set of transitions contributes an empty product. With no exceptions, Kupiec's statistic is `-2T ln(c)`, finite, and `LR_ind = 0` because there is nothing to compare. With only exceptions the same holds the other way round. With isolated exceptions (`n11 = 0`) the alternative fits `π11 = 0` exactly and `LR_ind` stays finite. A single observation is enough for Kupiec; the Christoffersen tests need two.
+
+**P-values.** `χ²(1)` is the square of a standard normal and `χ²(2)` is exponential with mean 2, so the p-values are `erfc(sqrt(x/2))` and `exp(-x/2)`; the tests compare them with SciPy's `chi2.sf`. The chi-squared limits are poor when few exceptions are expected (2.5 in 250 days at 99%). `null_rejection_rates` measures how poor: a dynamic program walks the days and keeps the joint distribution of (first day's state, last day's state, number of exceptions, number of consecutive exception pairs). Those four numbers determine all transition counts, so every statistic, and summing the probability of the states each test rejects gives its exact size. The work is `T × (x_max + 1)²` for `x_max` the largest exception count with non-negligible probability (`binom.isf(1e-15)`), a few milliseconds for 250 or 1,000 days. The tests check it against brute-force enumeration of all `2^T` sequences for small `T`, and against the binomial distribution for Kupiec. *Alternative not taken:* exact or Monte Carlo p-values for the tests themselves (Dufour-style Monte Carlo tests, as in Christoffersen & Pelletier 2004); the dynamic program would support exact p-values, which is on the roadmap.
+
+### Basel traffic light (`traffic_light.py`)
+
+Table 2 of the Basel Committee's 1996 backtesting framework maps the exceptions of 250 daily 99% VaR forecasts to zones: green for 0 to 4, yellow for 5 to 9 with plus factors 0.40, 0.50, 0.65, 0.75 and 0.85 added to the capital multiplier of 3, and red (plus factor 1) from 10. The boundaries come from the binomial(250, 1%) distribution: green while the probability of that many exceptions or fewer is below 95%, red from 99.99%. The tests reproduce the published cumulative probabilities from `scipy.stats.binom` and re-derive the zones from that rule. The function deliberately takes only the count for 250 days at 99%, the case the table defines.
+
+### Expected shortfall backtest (`es_backtest.py`)
+
+VaR says nothing about how large the losses beyond it are; expected shortfall does, and the Basel FRTB standards moved market risk capital to 97.5% ES. ES is harder to backtest because it is not *elicitable* (no scoring function is minimized by it, Gneiting 2011), so there is no simple exception count. Acerbi & Székely (2014) propose
+
+```text
+Z2 = Σ_t r[t] I[t] / (T α ES[t]) + 1,     I[t] = 1{r[t] < -VaR[t]},  α = 1 - c
+```
+
+If each day's forecast distribution is right and continuous, `E[r I] = -α ES` every day, so `E[Z2] = 0`; underestimated ES pushes `Z2` below zero. Of their three statistics, Z2 needs only the VaR and ES forecasts and the realized returns.
+
+`Z2` has no standard distribution, so `es_backtest` simulates it under the null, as the paper prescribes: it draws `N` return paths from the forecast distributions with `RiskForecast.simulate`, computes `Z2` on each and reports `(1 + #{Z_sim ≤ Z_obs}) / (N + 1)`. Counting the observed path among the draws makes this a Monte Carlo test with exact size whenever `α_test (N + 1)` is a whole number (Davison & Hinkley 1997), whatever the sample length; ties, such as `Z2 = 1` on paths without exceptions, count against the model. Paths are simulated in batches of at most two million path-days to bound memory, consuming the random stream exactly as one large draw would (a test checks this). With zero-mean normal forecasts `r / sigma` is standard normal and `Z2` depends only on it, so the null distribution does not depend on the volatility path; with the same seed, two different volatility paths give identical critical values, which another test checks.
+
+*Trade-off:* simulating the null from each method's own forecasts tests the whole tail of the forecast distribution, not ES alone, and for historical simulation and FHS the forecast distribution is discrete (resampled returns), so `E[Z2]` is not exactly zero there; the simulated critical values account for that. The README's size and power study measures how the tests behave.
+
+## 7. How correctness is verified
 
 | Kind of check | Examples |
 | --- | --- |
-| Textbook values | Hull's BSM call and put; Hull's Greeks example; Hull's American put on 5–500-step trees |
-| Closed forms | Unbounded mean–variance portfolios; inverse-volatility risk parity for uncorrelated or two assets; geometric Asian with one fixing = BSM; Gaussian VaR |
-| Independent implementations | scikit-learn's Ledoit–Wolf; a day-by-day reference backtest; a separate simulation of the geometric average; finite-difference Greeks |
+| Textbook values | Hull's BSM call and put; Hull's Greeks example; Hull's American put on 5–500-step trees; the Basel traffic-light table |
+| Closed forms | Unbounded mean–variance portfolios; inverse-volatility risk parity for uncorrelated or two assets; geometric Asian with one fixing = BSM; Gaussian VaR; Kupiec and Christoffersen statistics by hand; exception probabilities of rolling VaR on i.i.d. data |
+| Independent implementations | scikit-learn's Ledoit–Wolf; a day-by-day reference backtest; a separate simulation of the geometric average; finite-difference Greeks; single-window VaR for every rolling window; the RiskMetrics recursion; a Hull–White rescaling loop; SciPy's binomial and chi-squared distributions; brute-force enumeration of exception sequences |
 | Identities and properties (Hypothesis) | Put–call parity; no-arbitrage bounds; IV round trips; American ≥ European; CVaR ≥ VaR |
-| Statistical checks with fixed seeds | Monte Carlo within 3 standard errors; confidence-interval coverage; simulated moments and correlations |
+| Statistical checks with fixed seeds | Monte Carlo within 3 standard errors; confidence-interval coverage; simulated moments and correlations; backtest sizes on returns drawn from the forecast model itself, against their exact values; power against fat tails; `E[Z2] = 0` under the null |
 | Optimality | No random feasible portfolio beats the minimum-variance or maximum-Sharpe result; first-order conditions of the closed forms |
-| Negative controls | A peeking strategy must fail the look-ahead checks; prices violating no-arbitrage must raise |
+| Negative controls | A peeking strategy or VaR forecaster must fail the look-ahead checks; prices violating no-arbitrage must raise |
 | Documentation | The README's Python examples run as doctests |
 
 Monte Carlo and simulation tests use fixed seeds, so each either always passes or always fails; they cannot fail by chance in CI. Hypothesis property tests draw new random inputs on every run (200 per test, or 5,000 with `pytest --hypothesis-profile=thorough`). Tolerances are tied to the method's error: for example, the binomial test allows an error below `0.05 · S / steps` because CRR converges at rate 1/steps, and the gamma finite difference allows a relative error of 1e-4 because a second difference loses roughly half the digits to round-off.
 
-## 7. Tooling
+## 8. Tooling
 
 - **uv** manages the environment; `uv.lock` pins every dependency for every supported Python. The minimum versions in `pyproject.toml` are the oldest versions the lockfile actually exercises (the Python 3.11 job resolves NumPy 2.4 and SciPy 1.17).
 - **mypy --strict** covers `src`, `tests` and `examples`. SciPy and scikit-learn ship no type information, so a single override ignores their missing stubs, and their results are wrapped in `float()` or `np.asarray()`. Tests that deliberately pass wrong types use `typing.cast` instead of `type: ignore`.
 - **ruff** handles linting (including pydocstyle with Google-style docstrings) and formatting.
 - **pytest** runs unit tests, Hypothesis properties and the README doctests, with warnings turned into errors so deprecations surface immediately. Coverage must stay at or above 90% in CI.
-- **CI** (GitHub Actions) runs lint, format check, type check, tests with coverage, and CLI smoke tests on Python 3.11, 3.12 and 3.13, with read-only permissions and cancellation of superseded runs.
+- **CI** (GitHub Actions) runs lint, format check, type check, tests with coverage, CLI smoke tests and the example scripts on Python 3.11, 3.12 and 3.13, with read-only permissions and cancellation of superseded runs.
 
-## 8. Questions worth being able to answer
+## 9. Questions worth being able to answer
 
 - *Why does the binomial error oscillate instead of falling smoothly?* The strike falls at different positions between terminal nodes as the step count changes; the payoff kink is not resolved consistently.
 - *Why Brent rather than Newton for implied volatility?* Guaranteed convergence on a bracket; Newton divides by vega, which can be nearly zero.
@@ -214,6 +272,10 @@ Monte Carlo and simulation tests use fixed seeds, so each either always passes o
 - *Why does the maximum-Sharpe portfolio often concentrate in one or two assets?* It leans on the noisiest input, the expected returns; small estimation errors in `μ` move the weights a lot (see the README examples).
 - *How do you know the backtest has no look-ahead?* The contract is explicit, the engine shifts weights by one day, the schedule uses first trading days, and a perturbation test shows that future prices cannot change past weights, with a cheating strategy as a negative control.
 - *Why is turnover compared with drifted weights?* So that buy-and-hold is not charged for price moves.
-- *What would you change for production use?* Execution lag and slippage, per-asset constraints, a QP solver, vectorized pricing, and robust estimates of expected returns.
+- *Why does a 99% VaR model with no exceptions in 250 days fail Kupiec's test?* The test is two-sided, and zero exceptions is unlikely (0.99^250 = 8.1%) for a correct model: its VaR is probably too high. This is also why the nominal 5% test rejects a correct model 9.5% of the time at that sample size.
+- *Why does 250-day historical simulation have more than 1% exceptions at 99%?* Its VaR is the 3rd-worst return of 250, and on i.i.d. data a new return falls below the 3rd-smallest of 250 others with probability 3/251, about 1.2%.
+- *How do you know the VaR forecasts have no look-ahead?* Forecasts are a function of the window before the forecast day only; a perturbation test changes the scored return and every later one and demands bit-identical forecasts, and a forecaster that peeks fails it.
+- *Why simulate Z2's critical values from the forecasts themselves?* Under the null the realized returns are one draw from the forecast distributions, so ranking the observed statistic among simulated ones gives a test of exact size without asymptotics.
+- *What would you change for production use?* Execution lag and slippage, per-asset constraints, a QP solver, vectorized pricing, robust estimates of expected returns, and VaR from position-level P&L with full revaluation.
 
 See the README's *Limitations and roadmap* section for what is out of scope.

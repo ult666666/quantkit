@@ -1,4 +1,4 @@
-"""Command-line interface: ``quantkit price | iv | simulate | backtest | frontier``.
+"""Command-line interface: ``quantkit price | iv | simulate | backtest | frontier | var-backtest``.
 
 Run ``quantkit <command> --help`` for the options of each command.
 """
@@ -42,6 +42,18 @@ from quantkit.pricing import (
     implied_vol,
     monte_carlo_price,
 )
+from quantkit.var import (
+    BASEL_DAYS,
+    BASEL_LEVEL,
+    METHODS,
+    RISKMETRICS_DECAY,
+    RiskForecast,
+    backtest_var,
+    basel_traffic_light,
+    es_backtest,
+    null_rejection_rates,
+    rolling_var_es,
+)
 
 SIMULATED_TICKERS = ("AAA", "BBB", "CCC", "DDD", "EEE")
 SIMULATED_DRIFTS = (0.03, 0.05, 0.07, 0.09, 0.11)
@@ -49,6 +61,13 @@ SIMULATED_VOLS = (0.08, 0.12, 0.18, 0.24, 0.32)
 SIMULATED_CORRELATION = 0.3
 
 STRATEGY_NAMES = ("buy-and-hold", "equal-weight", "ma-crossover", "momentum", "inverse-vol")
+
+VAR_METHOD_LABELS = {
+    "historical": "historical",
+    "gaussian": "Gaussian",
+    "ewma": "EWMA",
+    "fhs": "FHS",
+}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -282,6 +301,85 @@ def _save_frontier_plot(table: pd.DataFrame, mu: pd.Series, cov: pd.DataFrame, p
     plt.close(fig)
 
 
+def _cmd_var_backtest(args: argparse.Namespace) -> None:
+    prices = load_prices_csv(args.prices)
+    asset_returns = compute_returns(prices)
+    if args.ticker is None:
+        returns = asset_returns.mean(axis=1)
+        subject = f"equal-weight portfolio of {prices.shape[1]} assets, rebalanced daily"
+    elif args.ticker in asset_returns.columns:
+        returns = asset_returns[args.ticker]
+        subject = args.ticker
+    else:
+        raise QuantkitError(
+            f"ticker {args.ticker!r} is not in {args.prices}; "
+            f"columns: {', '.join(map(str, asset_returns.columns))}"
+        )
+    methods = list(dict.fromkeys(args.method or METHODS))
+    forecasts = {
+        name: rolling_var_es(
+            returns, method=name, level=args.level, window=args.window, decay=args.decay
+        )
+        for name in methods
+    }
+    # Score every method on the same days: the period that the longest history covers.
+    n_days = min(len(forecast) for forecast in forecasts.values())
+    forecasts = {name: forecast.last(n_days) for name, forecast in forecasts.items()}
+    days = next(iter(forecasts.values())).var.index
+    decay = f", EWMA decay {args.decay:g}" if {"ewma", "fhs"} & set(methods) else ""
+    level = f"{100 * args.level:g}%"
+    print(
+        f"{subject}: {len(returns)} daily returns, {_day(returns.index[0])} to "
+        f"{_day(returns.index[-1])}\n"
+        f"{level} one-day VaR and ES, {args.window}-day window{decay}\n"
+        f"backtest: {n_days} days, {_day(days[0])} to {_day(days[-1])}"
+        f"{', the period every method covers' if len(methods) > 1 else ''}\n"
+    )
+    table = pd.DataFrame(
+        {
+            VAR_METHOD_LABELS[name]: _var_backtest_column(forecast, args)
+            for name, forecast in forecasts.items()
+        }
+    )
+    print(table.to_string())
+    sizes = null_rejection_rates(n_days, level=args.level)
+    print(
+        f"\nLR p-values use chi-squared limits. Over {n_days} days at {level}, a correct model "
+        f"fails the 5% tests\nwith probability {sizes.unconditional:.1%} (LR_uc), "
+        f"{sizes.independence:.1%} (LR_ind) and {sizes.conditional:.1%} (LR_cc).\n"
+        f"Z2 p-values compare with {args.es_simulations:,} paths simulated from each method's "
+        f"own forecasts (seed {args.seed})."
+    )
+
+
+def _var_backtest_column(forecast: RiskForecast, args: argparse.Namespace) -> dict[str, str]:
+    result = backtest_var(forecast.exceptions, level=forecast.level)
+    if forecast.level != BASEL_LEVEL:
+        zone = "n/a (99% only)"
+    elif len(forecast) < BASEL_DAYS:
+        zone = f"n/a (< {BASEL_DAYS} days)"
+    else:
+        light = basel_traffic_light(int(forecast.last(BASEL_DAYS).exceptions.sum()))
+        zone = f"{light.zone} ({light.n_exceptions})"
+    es = es_backtest(forecast, n_simulations=args.es_simulations, seed=args.seed)
+    return {
+        "exceptions": f"{result.n_exceptions}",
+        "expected exceptions": f"{result.expected_exceptions:.1f}",
+        "exception rate": f"{result.exception_rate:.2%}",
+        "Kupiec LR_uc p-value": f"{result.unconditional.p_value:.3f}",
+        "Christoffersen LR_ind p-value": f"{result.independence.p_value:.3f}",
+        "conditional coverage LR_cc p-value": f"{result.conditional.p_value:.3f}",
+        f"Basel zone, last {BASEL_DAYS} days": zone,
+        "Acerbi-Szekely Z2": f"{es.statistic:.2f}",
+        "Z2 simulated p-value": f"{es.p_value:.3f}",
+    }
+
+
+def _day(label: object) -> str:
+    """A date label for messages (the index of a CSV price table is a DatetimeIndex)."""
+    return str(pd.Timestamp(str(label)).date())
+
+
 # ------------------------------------------------------------------------ parser
 
 
@@ -356,4 +454,36 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     frontier.add_argument("--plot", type=Path, help="also save a PNG chart (needs matplotlib)")
     frontier.set_defaults(handler=_cmd_frontier)
+
+    var_backtest = commands.add_parser(
+        "var-backtest",
+        help="backtest rolling VaR and ES forecasts on a CSV of daily closing prices",
+        description="Forecast one-day VaR and ES from a trailing window, then test the "
+        "forecasts: exception counts (Kupiec, Christoffersen), the Basel traffic light "
+        "and the Acerbi-Szekely Z2 test of expected shortfall.",
+    )
+    var_backtest.add_argument(
+        "prices", type=Path, help="CSV in long (date,ticker,close) or wide form"
+    )
+    var_backtest.add_argument(
+        "--method",
+        choices=METHODS,
+        action="append",
+        help="forecasting method; repeat to compare several (default: all four)",
+    )
+    var_backtest.add_argument(
+        "--level", type=float, default=0.99, help="VaR and ES confidence level"
+    )
+    var_backtest.add_argument("--window", type=int, default=250, help="estimation window (days)")
+    var_backtest.add_argument(
+        "--decay", type=float, default=RISKMETRICS_DECAY, help="EWMA decay for ewma and fhs"
+    )
+    var_backtest.add_argument(
+        "--ticker", help="backtest one column instead of the equal-weight portfolio"
+    )
+    var_backtest.add_argument(
+        "--es-simulations", type=int, default=9_999, help="null paths for the Z2 p-value"
+    )
+    var_backtest.add_argument("--seed", type=int, default=0, help="seed for the Z2 simulation")
+    var_backtest.set_defaults(handler=_cmd_var_backtest)
     return parser

@@ -20,6 +20,20 @@ FloatArray = npt.NDArray[np.float64]
 SeedLike = int | np.random.Generator | None
 """Anything accepted by :func:`numpy.random.default_rng`: a seed, a generator or None."""
 
+# (1 - 0.99) * 500 evaluates to 5.000000000000004 in binary floating point; this
+# slack stops math.ceil from turning that into 6.
+_FLOAT_SLACK = 1e-9
+
+
+def tail_count(n_obs: int, level: float) -> int:
+    """Number of observations in the empirical ``1 - level`` tail: ``ceil(n * (1 - level))``.
+
+    At least one observation is always in the tail. Historical VaR and CVaR use
+    this count both for a single sample and for every rolling window, so the two
+    always agree.
+    """
+    return max(1, math.ceil(n_obs * (1.0 - level) - _FLOAT_SLACK))
+
 
 def require_finite(name: str, value: float) -> float:
     """Return ``value`` as a float, or raise if it is NaN or infinite."""

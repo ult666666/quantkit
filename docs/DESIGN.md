@@ -12,7 +12,7 @@ This document explains how quantkit is put together, why it is built that way, a
 
 **Non-goals**
 
-- Speed at scale. The pricing API is scalar, the optimizers use a general-purpose solver, and the backtester is daily. These are deliberate trade-offs for readability.
+- Speed at scale. The pricing API is scalar, the optimizers use a general-purpose solver, and the backtester is daily. These trade-offs keep the code readable.
 - Market data. There is no downloader; users bring a CSV, and examples use clearly labelled synthetic data.
 - Production trading features: order management, execution simulation, intraday data, corporate actions.
 
@@ -224,7 +224,7 @@ Under a correct model the exception indicators are i.i.d. Bernoulli(`p = 1 - c`)
 
 ### Basel traffic light (`traffic_light.py`)
 
-Table 2 of the Basel Committee's 1996 backtesting framework maps the exceptions of 250 daily 99% VaR forecasts to zones: green for 0 to 4, yellow for 5 to 9 with plus factors 0.40, 0.50, 0.65, 0.75 and 0.85 added to the capital multiplier of 3, and red (plus factor 1) from 10. The boundaries come from the binomial(250, 1%) distribution: green while the probability of that many exceptions or fewer is below 95%, red from 99.99%. The tests reproduce the published cumulative probabilities from `scipy.stats.binom` and re-derive the zones from that rule. The function deliberately takes only the count for 250 days at 99%, the case the table defines.
+Table 2 of the Basel Committee's 1996 backtesting framework maps the exceptions of 250 daily 99% VaR forecasts to zones: green for 0 to 4, yellow for 5 to 9 with plus factors 0.40, 0.50, 0.65, 0.75 and 0.85 added to the capital multiplier of 3, and red (plus factor 1) from 10. The boundaries come from the binomial(250, 1%) distribution: green while the probability of that many exceptions or fewer is below 95%, red from 99.99%. The tests reproduce the published cumulative probabilities from `scipy.stats.binom` and re-derive the zones from that rule. The function takes only the count for 250 days at 99%, the case the table defines.
 
 ### Expected shortfall backtest (`es_backtest.py`)
 
@@ -255,15 +255,37 @@ If each day's forecast distribution is right and continuous, `E[r I] = -α ES` e
 
 Monte Carlo and simulation tests use fixed seeds, so each either always passes or always fails; they cannot fail by chance in CI. Hypothesis property tests draw new random inputs on every run (200 per test, or 5,000 with `pytest --hypothesis-profile=thorough`). Tolerances are tied to the method's error: for example, the binomial test allows an error below `0.05 · S / steps` because CRR converges at rate 1/steps, and the gamma finite difference allows a relative error of 1e-4 because a second difference loses roughly half the digits to round-off.
 
+### By component
+
+| Component | Checked against |
+| --- | --- |
+| BSM prices | Hull's textbook values (call ≈ 4.76, put ≈ 0.81); put–call parity and no-arbitrage bounds over random inputs (Hypothesis) |
+| BSM Greeks | Hull's Greek-letters example; central finite differences; call–put Greek identities |
+| Implied volatility | Round trips through BSM over random inputs; typed errors for prices outside the bounds |
+| Binomial tree | Convergence to BSM at rate 1/steps; Hull's American put values for 5, 30, 50, 100 and 500 steps; a one-step tree by hand; American put ≥ European put; American call = European call when q = 0 |
+| Monte Carlo | Within 3 standard errors of BSM; 95% intervals contain the BSM price in 92–98% of 400 seeded runs; antithetic variates lower the standard error |
+| Asian options | Geometric formula equals BSM with one fixing and matches an independent simulation; the control-variate estimate agrees with plain Monte Carlo at over 10x lower standard error |
+| Ledoit–Wolf | scikit-learn's `ledoit_wolf`, including more assets than observations |
+| Mean–variance | Closed-form minimum-variance, tangency and target-return portfolios (unbounded case); first-order conditions; no random feasible portfolio beats the optimizer; budget and bounds respected |
+| Risk parity | Equal risk contributions; inverse-volatility closed forms (uncorrelated or two assets); volatility between minimum-variance and 1/N |
+| VaR / CVaR | Hand-computed tails; Gaussian closed forms; historical converges to parametric on normal data |
+| Rolling VaR / ES forecasts | Every window agrees with the single-sample `historical_var` and `parametric_var`; the RiskMetrics recursion; a Hull–White volatility-rescaling loop for FHS; **no look-ahead**: changing the return a forecast is scored against (and all later ones) leaves the forecast unchanged, and a peeking forecaster fails the same check; exception probabilities on i.i.d. data match closed forms (`m / (window + 1)` for historical simulation, a Student-t prediction interval for the Gaussian model) |
+| Exception tests | Hand-computed Kupiec and Christoffersen statistics; SciPy's binomial log-likelihoods and `chi2` p-values; `LR_cc = LR_uc + LR_ind`; exact sizes against brute-force enumeration of all 2^T exception sequences; simulated sizes on returns drawn from the forecast model itself |
+| Basel traffic light | The zones, plus factors and cumulative probabilities of the 1996 Basel table, and the 95% / 99.99% binomial rule behind them |
+| ES backtest (Z2) | A hand calculation; mean zero when returns follow the forecasts; a null distribution that does not depend on the volatility path; power against fat tails |
+| Backtester | An independent day-by-day reference loop; buy-and-hold equals the asset return; costs reduce wealth by exactly the computed amount; a hand-computed two-day example; **no look-ahead**: perturbing prices after day *t* leaves every weight in effect through day *t*+1 unchanged, and a deliberately cheating strategy fails the same check |
+| Metrics | Hand-computed series (drawdown and its duration, CAGR, Sharpe, Sortino, Calmar, hit rate) |
+| Data | Simulated means, volatilities and correlations match their targets; CSV round trips and specific error messages |
+
 ## 8. Tooling
 
 - **uv** manages the environment; `uv.lock` pins every dependency for every supported Python. The minimum versions in `pyproject.toml` are the oldest versions the lockfile actually exercises (the Python 3.11 job resolves NumPy 2.4 and SciPy 1.17).
 - **mypy --strict** covers `src`, `tests` and `examples`. SciPy and scikit-learn ship no type information, so a single override ignores their missing stubs, and their results are wrapped in `float()` or `np.asarray()`. Tests that deliberately pass wrong types use `typing.cast` instead of `type: ignore`.
 - **ruff** handles linting (including pydocstyle with Google-style docstrings) and formatting.
 - **pytest** runs unit tests, Hypothesis properties and the README doctests, with warnings turned into errors so deprecations surface immediately. Coverage must stay at or above 90% in CI.
-- **CI** (GitHub Actions) runs lint, format check, type check, tests with coverage, CLI smoke tests and the example scripts on Python 3.11, 3.12 and 3.13, with read-only permissions and cancellation of superseded runs.
+- **CI** (GitHub Actions) runs lint, format check, type check, tests with coverage, the README doctests against both the source tree and an installed wheel, CLI smoke tests and the example scripts on Python 3.11, 3.12 and 3.13, with read-only permissions and cancellation of superseded runs.
 
-## 9. Questions worth being able to answer
+## 9. Common questions
 
 - *Why does the binomial error oscillate instead of falling smoothly?* The strike falls at different positions between terminal nodes as the step count changes; the payoff kink is not resolved consistently.
 - *Why Brent rather than Newton for implied volatility?* Guaranteed convergence on a bracket; Newton divides by vega, which can be nearly zero.
@@ -278,4 +300,57 @@ Monte Carlo and simulation tests use fixed seeds, so each either always passes o
 - *Why simulate Z2's critical values from the forecasts themselves?* Under the null the realized returns are one draw from the forecast distributions, so ranking the observed statistic among simulated ones gives a test of exact size without asymptotics.
 - *What would you change for production use?* Execution lag and slippage, per-asset constraints, a QP solver, vectorized pricing, robust estimates of expected returns, and VaR from position-level P&L with full revaluation.
 
-See the README's *Limitations and roadmap* section for what is out of scope.
+Section 10 lists what is out of scope.
+
+## 10. Limitations and roadmap
+
+### Models
+
+Black–Scholes–Merton and GBM assume constant volatility and rates, lognormal prices and continuous dividends: no volatility smile, jumps or discrete dividends. Monte Carlo covers European and Asian payoffs only (no Longstaff–Schwartz for American options). The CRR tree converges slowly and with oscillation; smoother trees such as Leisen–Reimer are not implemented. Implied volatilities outside 0.0001%–1000% are reported as errors. The pricing API is scalar; large option chains would call for a vectorized interface.
+
+### Portfolio
+
+Expected returns are plain historical means, which are very noisy. The same weight bounds apply to every asset, with no per-asset, sector or turnover constraints. SLSQP is a general-purpose solver that works well for tens of assets; a dedicated QP solver would scale better. Risk parity is long-only. VaR is one-period and in return units.
+
+### VaR models and backtests
+
+Forecasts cover one day and one return series, in return units: there is no multi-day scaling, no P&L from positions and no revaluation of options. The EWMA decay is fixed rather than estimated (no GARCH fit), and FHS filters with that EWMA volatility. The likelihood-ratio p-values are asymptotic; `null_rejection_rates` reports how far the true size is from the nominal one, but the tests do not yet offer exact or Monte Carlo p-values. The independence test only looks at consecutive days. The traffic light implements the 1996 table for 250 days of 99% VaR, not the 97.5% zones or the P&L attribution test of the Basel FRTB standards. Z2's null distribution is simulated from each method's own forecasts, so it tests the forecast distribution's tail as a whole and needs positive ES forecasts.
+
+### Backtesting
+
+Daily close-to-close only: trades fill at the same close that produced the signal, and the only friction is a proportional cost (no slippage, market impact, borrowing or financing costs). Idle cash earns nothing. Prices must be complete (no missing values and no assets entering mid-sample) and should already be adjusted for splits and dividends. The no-look-ahead guarantee covers the engine and the built-in strategies; custom strategies can be checked with `check_no_lookahead`.
+
+### Data and verification
+
+There is no data downloader: bring your own CSV with ISO dates. CI runs lint, strict type checks and the full suite with README doctests on Python 3.11, 3.12 and 3.13.
+
+### Roadmap ideas
+
+per-asset and linear constraints, a vectorized BSM interface, Longstaff–Schwartz for American options, Black–Litterman expected returns, an engine option to fill trades after the signal close, Monte Carlo p-values and duration-based tests (Christoffersen & Pelletier 2004) for VaR exceptions, and GARCH-filtered historical simulation. The walk-forward example lags its estimation window by one close, but its trades still fill at the signal close.
+
+## 11. References
+
+- Hull, J. C. *Options, Futures, and Other Derivatives*. Pearson (chapters on the Black–Scholes–Merton model, the Greek letters, binomial trees and numerical procedures).
+- Black, F. & Scholes, M. (1973). The pricing of options and corporate liabilities. *Journal of Political Economy*, 81(3), 637–654.
+- Merton, R. C. (1973). Theory of rational option pricing. *Bell Journal of Economics and Management Science*, 4(1), 141–183.
+- Cox, J. C., Ross, S. A. & Rubinstein, M. (1979). Option pricing: A simplified approach. *Journal of Financial Economics*, 7(3), 229–263.
+- Glasserman, P. (2003). *Monte Carlo Methods in Financial Engineering*. Springer.
+- Kemna, A. G. Z. & Vorst, A. C. F. (1990). A pricing method for options based on average asset values. *Journal of Banking & Finance*, 14(1), 113–129.
+- Markowitz, H. (1952). Portfolio selection. *Journal of Finance*, 7(1), 77–91.
+- Merton, R. C. (1972). An analytic derivation of the efficient portfolio frontier. *Journal of Financial and Quantitative Analysis*, 7(4), 1851–1872.
+- Cornuéjols, G. & Tütüncü, R. (2007). *Optimization Methods in Finance*. Cambridge University Press.
+- Ledoit, O. & Wolf, M. (2004). A well-conditioned estimator for large-dimensional covariance matrices. *Journal of Multivariate Analysis*, 88(2), 365–411.
+- Maillard, S., Roncalli, T. & Teïletche, J. (2010). The properties of equally weighted risk contribution portfolios. *Journal of Portfolio Management*, 36(4), 60–70.
+- Griveau-Billion, T., Richard, J.-C. & Roncalli, T. (2013). A fast algorithm for computing high-dimensional risk parity portfolios. arXiv:1311.4057.
+- Moskowitz, T. J., Ooi, Y. H. & Pedersen, L. H. (2012). Time series momentum. *Journal of Financial Economics*, 104(2), 228–250.
+- J.P. Morgan/Reuters (1996). *RiskMetrics Technical Document*, 4th edition.
+- Hull, J. & White, A. (1998). Incorporating volatility updating into the historical simulation method for value-at-risk. *Journal of Risk*, 1(1), 5–19.
+- Barone-Adesi, G., Giannopoulos, K. & Vosper, L. (1999). VaR without correlations for portfolios of derivative securities. *Journal of Futures Markets*, 19(5), 583–602.
+- Kupiec, P. H. (1995). Techniques for verifying the accuracy of risk measurement models. *Journal of Derivatives*, 3(2), 73–84.
+- Christoffersen, P. F. (1998). Evaluating interval forecasts. *International Economic Review*, 39(4), 841–862.
+- Christoffersen, P. & Pelletier, D. (2004). Backtesting value-at-risk: A duration-based approach. *Journal of Financial Econometrics*, 2(1), 84–108.
+- Basel Committee on Banking Supervision (1996). *Supervisory framework for the use of "backtesting" in conjunction with the internal models approach to market risk capital requirements*. [bis.org/publ/bcbs22.htm](https://www.bis.org/publ/bcbs22.htm)
+- Acerbi, C. & Székely, B. (2014). Backtesting expected shortfall. *Risk*, December 2014.
+- Gneiting, T. (2011). Making and evaluating point forecasts. *Journal of the American Statistical Association*, 106(494), 746–762.
+- Jorion, P. (2007). *Value at Risk: The New Benchmark for Managing Financial Risk*, 3rd edition. McGraw-Hill (chapter on backtesting VaR).
+- Davison, A. C. & Hinkley, D. V. (1997). *Bootstrap Methods and their Application*. Cambridge University Press (Monte Carlo tests).

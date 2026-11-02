@@ -40,13 +40,13 @@ Quantitative finance code fails quietly: a sign slip in a Greek, an off-by-one d
 
 ## Quick start
 
-quantkit is not on PyPI. Install the library and the `quantkit` CLI from the GitHub release (Python 3.11+):
+quantkit is not on PyPI. Install the library and the `quantkit` CLI from GitHub (Python 3.11+):
 
 ```bash
-pip install https://github.com/ult666666/quantkit/releases/download/v0.1.0/quantkit-0.1.0-py3-none-any.whl
+pip install "git+https://github.com/ult666666/quantkit.git"
 ```
 
-Each release also attaches the source distribution and SHA-256 checksums. To work on the code, install it from source with [uv](https://docs.astral.sh/uv/):
+The [v0.1.0 release](https://github.com/ult666666/quantkit/releases/tag/v0.1.0) attaches a wheel, the source distribution and SHA-256 checksums, but it predates VaR model validation: it has no `quantkit.var` and no `var-backtest` command. To work on the code, install it from source with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/ult666666/quantkit.git
@@ -375,7 +375,7 @@ flowchart LR
 | Metrics | Hand-computed series (drawdown and its duration, CAGR, Sharpe, Sortino, Calmar, hit rate) |
 | Data | Simulated means, volatilities and correlations match their targets; CSV round trips and specific error messages |
 
-Monte Carlo and other statistical tests use fixed seeds, so they cannot fail by chance; the Hypothesis property tests draw fresh random inputs on every run (200 per test, or 5,000 with `pytest --hypothesis-profile=thorough`). The CI workflow runs ruff, `mypy --strict`, the tests with a 90% coverage floor, the README doctests, CLI smoke tests and the example scripts on Python 3.11, 3.12 and 3.13.
+Monte Carlo and other statistical tests use fixed seeds, so they cannot fail by chance; the Hypothesis property tests draw fresh random inputs on every run (200 per test, or 5,000 with `pytest --hypothesis-profile=thorough`). The CI workflow runs ruff, `mypy --strict`, the tests with a 90% coverage floor, the README doctests (against the source tree and against an installed wheel), CLI smoke tests and the example scripts on Python 3.11, 3.12 and 3.13.
 
 ## Development
 

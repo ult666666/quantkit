@@ -32,6 +32,19 @@ src/quantkit/
 └── cli.py, __main__.py  argparse front end (`quantkit ...`, `python -m quantkit`)
 ```
 
+Data flows through the subpackages like this:
+
+```mermaid
+flowchart LR
+    CSV["CSV file or synthetic GBM<br/>quantkit.data"] --> PX["wide price table<br/>(dates x tickers)"]
+    PX --> PF["quantkit.portfolio<br/>returns, covariance, optimizers, VaR"]
+    PF --> VR["quantkit.var<br/>rolling VaR/ES forecasts, exception tests,<br/>Basel traffic light, ES backtest"]
+    PX --> ST["strategy<br/>target weights per close"]
+    ST --> EN["backtest engine<br/>weights held from t+1, costs"]
+    EN --> MT["metrics<br/>CAGR, Sharpe, drawdown, ..."]
+    OS["OptionSpec"] --> PR["quantkit.pricing<br/>BSM, IV, CRR tree, Monte Carlo, Asian"]
+```
+
 Dependencies point one way: `pricing`, `portfolio`, `backtest` and `var` depend only on `_validation` and `exceptions` (and `backtest.engine` on `backtest.metrics`; inside `var`, `forecasts` uses `backtests` and `es_backtest` uses `forecasts`); `data` depends on `_validation`; only `cli` depends on everything, and only `__main__` imports `cli`. This keeps each subpackage testable on its own. The tail size shared by historical VaR and rolling historical simulation, `ceil(n (1 - level))`, lives in `_validation.tail_count` so that the two cannot drift apart.
 
 **Conventions used everywhere**

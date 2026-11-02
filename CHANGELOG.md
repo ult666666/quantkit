@@ -39,6 +39,10 @@ All notable changes to this project are documented here. The format follows
 - The tail size `ceil(n * (1 - level))` of historical VaR moved to a shared
   helper, so single-sample and rolling historical VaR always use the same rule.
   Results are unchanged.
+- The README is organised as install, one example, an API sketch and how it
+  works, and its doctests are unchanged. The command-line examples moved to
+  `docs/CLI.md`, the figures and studies to `docs/EXAMPLES.md`, and the
+  per-component checks, full limitations and references to `docs/DESIGN.md`.
 
 ### Fixed
 

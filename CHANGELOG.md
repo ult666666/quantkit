@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-05
+
 ### Added
 
 - `quantkit.var`, VaR model validation:
@@ -48,8 +50,8 @@ All notable changes to this project are documented here. The format follows
 
 - The README quick start installed the v0.1.0 release wheel, which predates
   `quantkit.var`: the VaR doctests failed with `ModuleNotFoundError` and
-  `var-backtest` was not a command. The quick start now installs from GitHub
-  and says what the release lacks.
+  `var-backtest` was not a command. The quick start now installs the v0.2.0
+  wheel.
 - `quantkit var-backtest` printed its table and then exited with an error when
   the sample was too long for `null_rejection_rates` to enumerate, for example
   20 years of daily returns at 95%. It now only leaves out the exact size of

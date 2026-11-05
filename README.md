@@ -15,12 +15,10 @@ quantkit is not on PyPI. Install the library and the `quantkit` command from Git
 (Python 3.11 or newer):
 
 ```bash
-pip install "git+https://github.com/ult666666/quantkit.git"
+pip install "https://github.com/ult666666/quantkit/releases/download/v0.2.0/quantkit-0.2.0-py3-none-any.whl"
 ```
 
-The wheel attached to the [v0.1.0 release](https://github.com/ult666666/quantkit/releases/tag/v0.1.0)
-predates VaR model validation, so it has no `quantkit.var` and no `var-backtest`. To
-work on the code, clone the repository and run `uv sync` with [uv](https://docs.astral.sh/uv/),
+To work on the code, clone the repository and run `uv sync` with [uv](https://docs.astral.sh/uv/),
 or `pip install ".[plot]"` in a virtual environment for the charts.
 
 ## Example

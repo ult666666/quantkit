@@ -11,15 +11,17 @@ hold.
 
 ## Install
 
-quantkit is not on PyPI. Install the library and the `quantkit` command from GitHub
-(Python 3.11 or newer):
+With Git installed, run the source install in a Python 3.11+ virtual environment to get
+the current library and the `quantkit` command.
 
 ```bash
-pip install "https://github.com/ult666666/quantkit/releases/download/v0.2.0/quantkit-0.2.0-py3-none-any.whl"
+python -m pip install "quantkit @ git+https://github.com/ult666666/quantkit.git@main"
 ```
 
 To work on the code, clone the repository and run `uv sync` with [uv](https://docs.astral.sh/uv/),
-or `pip install ".[plot]"` in a virtual environment for the charts.
+or `pip install ".[plot]"` in a virtual environment for the charts. The
+[v0.1.0 release](https://github.com/ult666666/quantkit/releases/tag/v0.1.0) includes a
+prebuilt wheel and checksums for that version.
 
 ## Example
 

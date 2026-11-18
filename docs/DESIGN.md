@@ -190,7 +190,7 @@ for the last trade day `s ≤ t`, computed for all days with a forward fill. The
 - The built-in strategies use trailing windows only (`rolling`, `shift` with positive lags).
 - **Calendar look-ahead:** rebalancing on the *last* trading day of each month looks innocent but is not causal, because on a given day you cannot know it is the last trading day without tomorrow's date. `rebalance_days` flags the *first* trading day of each period, which needs only today's and yesterday's dates.
 - **Tests:** for every strategy and several cutoffs `t`, prices after `t` are multiplied by random factors and the backtest is re-run; the weights in effect on days `0..t+1`, and equity and turnover through day `t`, must be identical. A deliberately cheating strategy (buying whatever rises tomorrow) is a negative control: it fails the same check, and its equity explodes.
-- `check_no_lookahead(strategy, prices)` exposes the strategy-level check for custom strategies.
+- `check_no_lookahead(strategy, prices)` samples historical cutoffs for custom strategies. It changes later prices and also removes later dates: a month-end rule that reads the next trading date can pass a price shock but changes its decision on a shorter history.
 
 ### Metrics (`metrics.py`)
 

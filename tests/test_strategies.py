@@ -107,6 +107,43 @@ def test_inverse_volatility_weights_are_inversely_proportional_to_volatility() -
     np.testing.assert_allclose(targets["WILD"], 0.25)
 
 
+@pytest.mark.parametrize(
+    "second", [[80.0] * 5, [80.0, 85.0, 82.0, 85.0, 80.0]], ids=["all-flat", "one-flat"]
+)
+def test_inverse_volatility_stays_in_cash_when_a_weight_is_undefined(second: list[float]) -> None:
+    prices = frame({"A": [100.0] * 5, "B": second})
+    strategy = InverseVolatility(window=2, rebalance="D")
+    assert strategy(prices).isna().all().all()
+    result = run_backtest(prices, strategy, cost_bps=25.0, initial_capital=1000.0)
+    np.testing.assert_array_equal(result.equity, 1000.0)
+    np.testing.assert_array_equal(result.costs, 0.0)
+    np.testing.assert_array_equal(result.turnover, 0.0)
+
+
+def test_inverse_volatility_holds_its_shares_through_flat_windows_and_resumes() -> None:
+    prices = frame(
+        {
+            "A": [100.0, 120.0, 100.0, 100.0, 100.0, 100.0, 100.0, 90.0, 99.0],
+            "B": [100.0, 85.0, 105.0, 110.0, 120.0, 120.0, 120.0, 132.0, 115.0],
+        }
+    )
+    strategy = InverseVolatility(window=2, rebalance="D")
+    targets = strategy(prices)
+    assert targets.iloc[4:7].isna().all().all()  # A alone, then both, have zero volatility.
+    result = run_backtest(prices, strategy, cost_bps=25.0, initial_capital=1000.0)
+    shares = result.equity.iloc[3] * targets.iloc[3] / prices.iloc[3]
+    np.testing.assert_allclose(result.equity.iloc[4:7], prices.iloc[4:7] @ shares)
+    np.testing.assert_array_equal(result.turnover.iloc[4:7], 0.0)
+    np.testing.assert_array_equal(result.costs.iloc[4:7], 0.0)
+    assert targets.iloc[7].sum() == pytest.approx(1.0)
+    np.testing.assert_allclose(result.weights.iloc[8], targets.iloc[7])
+    pre_trade = shares * prices.iloc[7]
+    turnover = (targets.iloc[7] - pre_trade / pre_trade.sum()).abs().sum()
+    assert turnover > 0.0
+    assert result.turnover.iloc[7] == pytest.approx(turnover)
+    assert result.equity.iloc[7] == pytest.approx(pre_trade.sum() * (1.0 - 0.0025 * turnover))
+
+
 def test_calendar_strategies_need_a_datetime_index() -> None:
     prices = pd.DataFrame({"X": [1.0, 2.0, 3.0]})
     with pytest.raises(InvalidParameterError, match="DatetimeIndex"):

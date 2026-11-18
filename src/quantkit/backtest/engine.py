@@ -204,9 +204,10 @@ def check_no_lookahead(
 ) -> None:
     """Raise if ``strategy``'s weight for some day depends on later prices.
 
-    For several cutoff days ``t`` the prices after ``t`` are scrambled (multiplied
-    by random factors) and the strategy is re-run. A causal strategy produces
-    identical target weights for days ``0..t``.
+    For sampled cutoff days, first scramble the later prices, then rerun on a
+    truncated price history to also check for dependence on future trading
+    dates. Each run must reproduce the original weights over the shared prefix.
+    Truncated histories use at least two dates, the minimum supported price table.
 
     Args:
         strategy: The strategy to check.
@@ -232,3 +233,13 @@ def check_no_lookahead(
                 f"look-ahead detected: target weights up to {day} changed when only "
                 "later prices were modified"
             )
+        # Keep at least two dates, as required by the public price-table contract.
+        stop = max(2, cutoff + 1)
+        if stop < len(prices):
+            prefix_weights = strategy(prices.iloc[:stop]).to_numpy()
+            if not np.array_equal(baseline[:stop], prefix_weights, equal_nan=True):
+                day = pd.Timestamp(prices.index[stop - 1]).date()
+                raise InvalidParameterError(
+                    f"look-ahead detected: target weights up to {day} changed when "
+                    "later trading dates were removed"
+                )

@@ -198,6 +198,32 @@ def test_built_in_strategies_pass_the_lookahead_checker(
     check_no_lookahead(strategy, prices, cutoffs=10)
 
 
+def test_lookahead_checker_detects_a_rebalance_using_future_trading_dates() -> None:
+    prices = pd.DataFrame(
+        {"X": [100.0, 101.0, 99.0, 102.0]}, index=pd.bdate_range("2024-01-08", periods=4)
+    )
+
+    def last_close_of_month(history: pd.DataFrame) -> pd.DataFrame:
+        dates = pd.DatetimeIndex(history.index)
+        # The final observed session of each month is known only in hindsight.
+        flags = ~dates.to_period("M").duplicated(keep="last")
+        return pd.DataFrame({"X": flags.astype(float)}, index=dates)
+
+    with pytest.raises(InvalidParameterError, match="look-ahead"):
+        check_no_lookahead(last_close_of_month, prices, cutoffs=len(prices) - 1)
+
+
+def test_lookahead_checker_uses_supported_histories_for_short_samples(
+    prices: pd.DataFrame,
+) -> None:
+    def strategy(history: pd.DataFrame) -> pd.DataFrame:
+        assert len(history) >= 2
+        return BuyAndHold()(history)
+
+    check_no_lookahead(strategy, prices.iloc[:2])
+    check_no_lookahead(strategy, prices.iloc[:4], cutoffs=3)
+
+
 def peeking_strategy(prices: pd.DataFrame) -> pd.DataFrame:
     """Deliberately broken: buys whatever will rise tomorrow (uses shift(-1))."""
     rises_tomorrow = prices.shift(-1) > prices

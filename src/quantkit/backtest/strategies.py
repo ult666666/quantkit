@@ -184,6 +184,9 @@ class InverseVolatility:
     Volatility is the standard deviation of the last ``window`` daily returns.
     Assets that have been calmer get more capital, so each contributes roughly
     similar risk when correlations are similar (a simple cousin of risk parity).
+    A rebalance requires positive volatility for every asset. During warm-up or
+    when an asset has zero trailing volatility, keep the existing shares (or
+    initial cash) until a scheduled rebalance has defined weights.
 
     Attributes:
         window: Trailing window for volatility, in trading days.
@@ -199,8 +202,10 @@ class InverseVolatility:
 
     def __call__(self, prices: pd.DataFrame) -> pd.DataFrame:
         """Target weights proportional to inverse volatility on rebalance days."""
-        inverse_vol = 1.0 / prices.pct_change().rolling(self.window).std()
-        # Rows are NaN until a full window of returns exists, so no trade happens
-        # (the portfolio stays in cash) during the warm-up.
+        volatility = prices.pct_change().rolling(self.window).std()
+        # An undefined reciprocal invalidates the whole rebalance. An all-NaN
+        # target row is the engine's instruction to keep the existing shares.
+        defined = volatility.gt(0.0).all(axis=1)
+        inverse_vol = 1.0 / volatility.where(defined, axis=0)
         targets = inverse_vol.div(inverse_vol.sum(axis=1), axis=0)
         return _trade_only_on(targets, rebalance_days(_dates(prices), self.rebalance))
